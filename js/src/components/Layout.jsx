@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
+import { WorkflowProvider } from '../context/WorkflowContext';
 
 const Layout = () => {
     return (
@@ -19,6 +20,15 @@ const Layout = () => {
                             Generate
                         </NavLink>
                         <NavLink 
+                            to="/draw" 
+                            className={({ isActive }) => 
+                                `px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive ? 'bg-accent text-white' : 'text-gray-300 hover:bg-base-300'}`
+                            }
+                        >
+                            Draw
+                        </NavLink>
+
+                        <NavLink 
                             to="/gallery" 
                             className={({ isActive }) => 
                                 `px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive ? 'bg-accent text-white' : 'text-gray-300 hover:bg-base-300'}`
@@ -30,7 +40,9 @@ const Layout = () => {
                 </nav>
             </header>
             <main className="container mx-auto p-4">
-                <Outlet />
+                <WorkflowProvider>
+                    <Outlet />
+                </WorkflowProvider>
             </main>
         </div>
     );

@@ -37,7 +37,6 @@ server.PromptServer.instance.app.router.add_static(
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
 
-print("✅ CozyGen API routes mounted.")
-print("✅ CozyGen web UI served at /cozygen/")
+
 
 WEB_DIRECTORY = "./js/web"

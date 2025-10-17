@@ -1,11 +1,7 @@
 import os
-import json
 import torch
 import numpy as np
-from PIL import Image, ImageOps
-from PIL.PngImagePlugin import PngInfo
-import base64 # New import
-import io # New import
+from PIL import Image
 
 import folder_paths
 from nodes import SaveImage
@@ -93,6 +89,8 @@ class CozyGenImageInput:
     CATEGORY = "CozyGen"
 
     def load_image(self, param_name, image_filename):
+        if not image_filename:
+            return (None, None)
         image_path = folder_paths.get_input_directory() + os.sep + image_filename
         img = Image.open(image_path)
         image_np = np.array(img).astype(np.float32) / 255.0
@@ -110,6 +108,8 @@ class CozyGenImageInput:
         return (image, mask)
 
 
+from .api import server_queue, queue_lock
+
 class CozyGenOutput(SaveImage):
     def __init__(self):
         super().__init__()
@@ -126,37 +126,58 @@ class CozyGenOutput(SaveImage):
             },
             "hidden": {
                 "prompt": "PROMPT",
-                "extra_pnginfo": "EXTRA_PNGINFO"
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "job_id": ("STRING", {"default": ""}), # For tracking
             },
         }
 
     FUNCTION = "save_images"
     CATEGORY = "CozyGen"
 
-    def save_images(self, images, filename_prefix="CozyGen/output", prompt=None, extra_pnginfo=None):
+    def save_images(self, images, filename_prefix="CozyGen/output", prompt=None, extra_pnginfo=None, job_id=""):
         results = super().save_images(images, filename_prefix, prompt, extra_pnginfo)
         server_instance = server.PromptServer.instance
 
+        # Extract job_id from the prompt's extra_data if not passed directly
+        if not job_id and extra_pnginfo and 'job_id' in extra_pnginfo:
+            job_id = extra_pnginfo['job_id']
+
         if server_instance and results and 'ui' in results and 'images' in results['ui']:
             batch_images_data = []
-            for saved_image in results['ui']['images']:
+            thumbnail_url = None
+            for i, saved_image in enumerate(results['ui']['images']):
                 image_url = f"/view?filename={saved_image['filename']}&subfolder={saved_image['subfolder']}&type={saved_image['type']}"
+                if i == 0:
+                    thumbnail_url = image_url
                 batch_images_data.append({
                     "url": image_url,
                     "filename": saved_image['filename'],
                     "subfolder": saved_image['subfolder'],
                     "type": saved_image['type']
                 })
-            
+
             if batch_images_data:
                 message_data = {
                     "status": "images_generated",
-                    "images": batch_images_data
+                    "images": batch_images_data,
+                    "job_id": job_id
                 }
                 server_instance.send_sync("cozygen_batch_ready", message_data)
-                print(f"CozyGen: Sent batch WebSocket message: {message_data}")
+
+                # Update server-side queue
+                if job_id:
+                    asyncio.run_coroutine_threadsafe(self.update_job_status(job_id, 'completed', thumbnail_url), server_instance.loop)
 
         return results
+
+    async def update_job_status(self, job_id, status, thumbnail_url=None):
+        async with queue_lock:
+            for job in server_queue:
+                if job['id'] == job_id:
+                    job['status'] = status
+                    if thumbnail_url:
+                        job['thumbnailUrl'] = thumbnail_url
+                    break
 
 
 import imageio
@@ -169,7 +190,7 @@ class CozyGenVideoOutput:
 
     @classmethod
     def INPUT_TYPES(s):
-        return {"required": 
+        return {"required":
                     {"images": ("IMAGE", ),
                      "frame_rate": ("INT", {"default": 8, "min": 1, "max": 24}),
                      "loop_count": ("INT", {"default": 0, "min": 0, "max": 100}),
@@ -177,7 +198,7 @@ class CozyGenVideoOutput:
                      "format": (["video/webm", "video/mp4", "image/gif"],),
                      "pingpong": ("BOOLEAN", {"default": False}),
                      },
-                "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
+                "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "job_id": ("STRING", {"default": ""})},
                 }
 
     RETURN_TYPES = ()
@@ -186,11 +207,11 @@ class CozyGenVideoOutput:
 
     CATEGORY = "CozyGen"
 
-    def save_video(self, images, frame_rate, loop_count, filename_prefix="CozyGen/video", format="video/webm", pingpong=False, prompt=None, extra_pnginfo=None):
+    def save_video(self, images, frame_rate, loop_count, filename_prefix="CozyGen/video", format="video/webm", pingpong=False, prompt=None, extra_pnginfo=None, job_id=""):
         filename_prefix += self.prefix_append
         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
         results = list()
-        
+
         if format == "image/gif":
             ext = "gif"
         elif format == "video/mp4":
@@ -199,8 +220,7 @@ class CozyGenVideoOutput:
             ext = "webm"
 
         file = f"{filename}_{counter:05}_.{ext}"
-        
-        # imageio requires uint8
+
         video_data = (images.cpu().numpy() * 255).astype(np.uint8)
 
         if pingpong:
@@ -217,21 +237,33 @@ class CozyGenVideoOutput:
             "type": self.type
         })
 
+        if not job_id and extra_pnginfo and 'job_id' in extra_pnginfo:
+            job_id = extra_pnginfo['job_id']
+
         server_instance = server.PromptServer.instance
         if server_instance:
             for result in results:
                 video_url = f"/view?filename={result['filename']}&subfolder={result['subfolder']}&type={result['type']}"
                 message_data = {
                     "status": "video_generated",
-                    "video_url": video_url,
-                    "filename": result['filename'],
-                    "subfolder": result['subfolder'],
-                    "type": result['type']
+                    "url": video_url,
+                    "job_id": job_id
                 }
                 server_instance.send_sync("cozygen_video_ready", message_data)
-                print(f"CozyGen: Sent custom WebSocket message: {{'type': 'cozygen_video_ready', 'data': {message_data}}}")
+
+                if job_id:
+                    asyncio.run_coroutine_threadsafe(self.update_job_status(job_id, 'completed', video_url), server_instance.loop)
 
         return { "ui": { "videos": results } }
+
+    async def update_job_status(self, job_id, status, thumbnail_url=None):
+        async with queue_lock:
+            for job in server_queue:
+                if job['id'] == job_id:
+                    job['status'] = status
+                    if thumbnail_url:
+                        job['thumbnailUrl'] = thumbnail_url
+                    break
 
 import comfy.samplers
 
@@ -349,8 +381,18 @@ class CozyGenChoiceInput:
                 choices = folder_paths.get_filename_list(choice_type)
                 if choices:
                     return (choices[0],)
-        
+
         return (final_value,)
+
+class CozyGenJobID:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"job_id": ("STRING", {"default": "", "multiline": False})}}
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "get_job_id"
+    CATEGORY = "CozyGen/Internal"
+    def get_job_id(self, job_id):
+        return (job_id,)
 
 NODE_CLASS_MAPPINGS = {
     "CozyGenOutput": CozyGenOutput,
@@ -361,6 +403,7 @@ NODE_CLASS_MAPPINGS = {
     "CozyGenIntInput": CozyGenIntInput,
     "CozyGenStringInput": CozyGenStringInput,
     "CozyGenChoiceInput": CozyGenChoiceInput,
+    "CozyGenJobID": CozyGenJobID,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {

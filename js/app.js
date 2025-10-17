@@ -393,10 +393,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         const referencedNodeId = inputValue[0];
                         const referencedNode = workflowToSend[referencedNodeId];
 
-                        if (referencedNode && referencedNode.class_type === 'CozyGenParameter' && parameterValues.hasOwnProperty(referencedNodeId)) {
+                        if (referencedNode && referencedNode.class_type === 'CozyGenParameter' && Object.prototype.hasOwnProperty.call(parameterValues, referencedNodeId)) {
                             // Replace the reference with the actual value from CozyGenParameter
                             node.inputs[inputName] = parameterValues[referencedNodeId].default;
-                        } else if (referencedNode && referencedNode.class_type === 'CozyGenDynamicInput' && parameterValues.hasOwnProperty(referencedNodeId)) {
+                        } else if (referencedNode && referencedNode.class_type === 'CozyGenDynamicInput' && Object.prototype.hasOwnProperty.call(parameterValues, referencedNodeId)) {
                             // Replace the reference with the actual value from CozyGenDynamicInput
                             node.inputs[inputName] = parameterValues[referencedNodeId].default_value;
                         }

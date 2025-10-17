@@ -1,3 +1,4 @@
+.hidden_folders
 # Node dependencies
 js/node_modules
 
@@ -40,10 +41,7 @@ node_modules/
 # Cursor related files
 .cursor/
 
-workflows/
-
-!workflows/CozyGen_Wan2.2_i2v_GGUF_example.json
-!workflows/CozyGen_Wan2.2_t2v_GGUF_example.json
-!workflows/CozyGen_Flux_example.json
-!workflows/CozyGen_i2i_example.json
-!workflows/CozyGen_QWEN_Image_Edit_example.json
+# Ignore everything in the workflows directory...
+workflows/*
+# ...except for the example workflows
+!workflows/*example.json

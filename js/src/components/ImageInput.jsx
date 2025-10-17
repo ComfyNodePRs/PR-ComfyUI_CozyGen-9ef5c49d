@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { getGallery, uploadImage } from '../api';
 
-const ImageInput = ({ input, value, onFormChange }) => {
+const ImageInput = ({ input, value, onFormChange, onBypassToggle, disabled, isGenerating }) => {
     const [imageSource, setImageSource] = useState(value?.source || 'Upload'); // 'Upload' or 'Gallery'
     const [selectedGalleryImage, setSelectedGalleryImage] = useState(value?.path || '');
     const [uploadedFile, setUploadedFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState(value?.url || '');
     const [galleryItems, setGalleryItems] = useState([]);
     const [currentGalleryPath, setCurrentGalleryPath] = useState('');
-    const [smartResize, setSmartResize] = useState(true);
+    const [smartResize, setSmartResize] = useState(() => {
+        const saved = localStorage.getItem("smartResizeEnabled");
+        return saved !== null ? JSON.parse(saved) : false;
+    });
+
+    useEffect(() => {
+        localStorage.setItem("smartResizeEnabled", JSON.stringify(smartResize));
+    }, [smartResize]);
 
     useEffect(() => {
         const fetchGallery = async () => {
@@ -77,12 +84,15 @@ const ImageInput = ({ input, value, onFormChange }) => {
         }
     };
 
-    const handleClearImage = () => {
-        setImageSource('Upload');
-        setSelectedGalleryImage('');
-        setUploadedFile(null);
+
+    const handleCozyGenClear = () => {
         setPreviewUrl('');
-        onFormChange(input.inputs.param_name, { source: 'Upload', path: '', url: '' });
+        // Also clear the file input element itself
+        const uploader = document.getElementById(`cozyGenImageUploader-${input.id}`);
+        if (uploader) {
+            uploader.value = null;
+        }
+        onFormChange(input.inputs.param_name, null);
     };
 
     const handleCozyGenFileChange = async (e) => {
@@ -145,27 +155,51 @@ const ImageInput = ({ input, value, onFormChange }) => {
 
     return (
         <div className="form-control mb-4 p-3 bg-base-200 rounded-box shadow-lg">
-            <label className="label">
-                <span className="label-text text-lg font-semibold">{input.inputs.param_name}</span>
-            </label>
+            <div className="label flex justify-between items-center">
+                <div className="flex items-center space-x-2">
+                    <span className="label-text text-lg font-semibold">{input.inputs.param_name}</span>
+                    <span className="text-xs text-gray-400">
+                        (Bypass
+                        <input
+                            type="checkbox"
+                            className="toggle toggle-sm toggle-accent ml-1"
+                            checked={disabled}
+                            onChange={(e) => onBypassToggle(input.inputs.param_name, e.target.checked)}
+                        />)
+                    </span>
+                </div>
+                {input.class_type === 'CozyGenImageInput' && !disabled && (
+                    <button onClick={handleCozyGenClear} className="btn btn-xs btn-outline" disabled={disabled || isGenerating}>Clear</button>
+                )}
+            </div>
 
             {input.class_type === 'CozyGenImageInput' ? (
-                <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">
-                    {/* Left Column: File Input and Smart Resize */}
+                <div className={`flex flex-col sm:flex-row items-center gap-4 ${disabled ? 'opacity-50' : ''}`}>
                     <div className="flex-grow w-full sm:w-auto">
-                        <input
-                            type="file"
-                            id={`cozyGenImageUploader-${input.id}`} // Unique ID for each input
-                            accept="image/png, image/jpeg, image/webp"
-                            onChange={handleCozyGenFileChange}
-                            className="file-input file-input-bordered w-full mb-2"
-                        />
-                        <div class="form-control">
-                            <label class="label cursor-pointer">
-                                <span class="label-text">Smart Resize</span> 
-                                <input type="checkbox" class="toggle" checked={smartResize} onChange={() => setSmartResize(!smartResize)} />
-                            </label>
+                        <div className="flex items-center gap-2">
+                            <label htmlFor={`cozyGenImageUploader-${input.id}`} className={`cursor-pointer bg-base-300 hover:bg-base-100 text-white text-sm font-bold py-1 px-3 rounded border border-gray-500 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                    {value ? 'Change Image' : 'Upload Image'}
+                                </label>
+                                <input
+                                    type="file"
+                                    id={`cozyGenImageUploader-${input.id}`}
+                                    accept="image/png, image/jpeg, image/webp"
+                                    onChange={handleCozyGenFileChange}
+                                    className="hidden"
+                                    disabled={disabled}
+                                />
+                            <div className="form-control flex-row items-center justify-end">
+                                <label className="label cursor-pointer flex items-center gap-2">
+                                    <span className="label-text whitespace-nowrap">Smart Resize</span>
+                                    <input type="checkbox" className="toggle" checked={smartResize} onChange={() => setSmartResize(!smartResize)} disabled={disabled} />
+                                </label>
+                            </div>
                         </div>
+                        {value && !disabled && (
+                            <div className="text-xs text-gray-500 mt-2 pl-1">
+                                Selected: {value}
+                            </div>
+                        )}
                     </div>
                     {/* Right Column: Image Preview Thumbnail */}
                     {previewUrl && (
@@ -186,7 +220,6 @@ const ImageInput = ({ input, value, onFormChange }) => {
                             <option value="Upload">Upload Image</option>
                             <option value="Gallery">Select from Gallery</option>
                         </select>
-                        <button onClick={handleClearImage} className="btn btn-sm btn-outline">Clear</button>
                     </div>
 
                     {imageSource === 'Upload' && (

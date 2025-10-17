@@ -9,8 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
+    "fabric": "^6.7.1",
+    "konva": "^9.3.22",
     "react": "^18.2.0",
+    "react-color": "^2.19.3",
     "react-dom": "^18.2.0",
+    "react-draggable": "^4.5.0",
+    "react-konva": "^18.2.14",
     "react-modal": "^3.16.3",
     "react-router-dom": "^6.23.1",
     "react-zoom-pan-pinch": "^3.7.0"
